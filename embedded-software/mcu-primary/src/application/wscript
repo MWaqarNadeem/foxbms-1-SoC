@@ -62,6 +62,15 @@ def build(bld):
            os.path.join('config', 'sox_cfg.c'),
            os.path.join('plausibility', 'plausibility.c'),
            os.path.join('sox', 'sox.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_initialize.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_terminate.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_data.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_emxAPI.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_emxutil.c'),
+           os.path.join('sox', 'soc_lstm', 'predictAndUpdateState.c'),
+           os.path.join('sox', 'soc_lstm', 'resetState.c'),
+           os.path.join('sox', 'soc_lstm', 'socEstimator_wrapper.c'),
            os.path.join('task', 'appltask.c')])
 
     includes = os.path.join(bld.bldnode.abspath()) + ' '
@@ -76,6 +85,7 @@ def build(bld):
                 os.path.join('config'),
                 os.path.join('plausibility'),
                 os.path.join('sox'),
+                os.path.join('sox', 'soc_lstm'),
                 os.path.join('task'),
 
                 os.path.join(bld.top_dir, bld.env.es_dir, bld.env.mcu_dir, 'src', 'driver', 'config'),

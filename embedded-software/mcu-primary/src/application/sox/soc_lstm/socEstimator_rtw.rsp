@@ -1,0 +1,8 @@
+socEstimator_data.obj
+socEstimator_initialize.obj
+socEstimator_terminate.obj
+socEstimator.obj
+resetState.obj
+predictAndUpdateState.obj
+socEstimator_emxutil.obj
+socEstimator_emxAPI.obj

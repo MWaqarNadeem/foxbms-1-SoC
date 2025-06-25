@@ -61,6 +61,10 @@
 #include "batterysystem_cfg.h"
 #include "nvramhandler.h"
 
+
+/* For SoC Estimation from LSTM */
+#include "socEstimator_wrapper.h"
+
 /*================== Macros and Definitions ===============================*/
 
 /*================== Constant and Variable Definitions ====================*/
@@ -226,101 +230,56 @@ void SOC_RecalibrateViaLookupTable(void) {
     SOC_SetValue(soc_min, soc_max, soc_mean);
 }
 
+/* ==== SoC buffer for LSTM ==== */
+#define LSTM_INPUT_LEN 20  // Or whatever time window you trained the LSTM on
 
+static float voltage_buffer[LSTM_INPUT_LEN] = {0};
+static float current_buffer[LSTM_INPUT_LEN] = {0};
+static float temperature_buffer[LSTM_INPUT_LEN] = {0};
+static int buffer_index = 0;
+static bool buffer_full = false;
+
+
+/* ==== SOC Estimator from LSTM ==== */
 void SOC_Calculation(void) {
-    uint32_t timestamp = 0;
-    uint32_t previous_timestamp = 0;
+    DB_ReadBlock(&sox_current_tab, DATA_BLOCK_ID_CURRENT_SENSOR);
+    DB_ReadBlock(&cellminmax, DATA_BLOCK_ID_MINMAX);
 
-    uint32_t timestamp_cc = 0;
-    uint32_t previous_timestamp_cc = 0;
+    float v = (float)(cellminmax.voltage_mean) / 1000.0f;     // mV to V
+    float c = (float)(sox_current_tab.current) / 1000.0f;     // mA to A
+    float t = (float)(cellminmax.temperature_mean);           // °C
 
-    uint32_t timestep = 0;
+    voltage_buffer[buffer_index] = v;
+    current_buffer[buffer_index] = c;
+    temperature_buffer[buffer_index] = t;
 
-    DATA_BLOCK_CURRENT_SENSOR_s cans_current_tab;
-    SOX_SOC_s soc = {50.0, 50.0, 50.0, 0, 0, 0, 0};
-    float deltaSOC = 0.0;
+    buffer_index++;
+    if (buffer_index >= LSTM_INPUT_LEN) {
+        buffer_index = 0;
+        buffer_full = true;
+    }
 
-    if (BMS_GetBatterySystemState() == BMS_AT_REST) {
-        /* Recalibrate SOC via LUT */
-        SOC_RecalibrateViaLookupTable();
-    } else {
-        /* Use coulomb/current counting */
-        if (sox_state.sensor_cc_used == FALSE) {
-            DB_ReadBlock(&sox_current_tab, DATA_BLOCK_ID_CURRENT_SENSOR);
+    if (buffer_full) {
+        float soc_out = 0.0f;
+        SOX_GetStateOfCharge_fromLSTM(voltage_buffer, current_buffer, temperature_buffer, LSTM_INPUT_LEN, &soc_out);
 
-            timestamp = sox_current_tab.timestamp_cur;
-            previous_timestamp = sox_current_tab.previous_timestamp_cur;
+        // Clamp the output
+        if (soc_out > 100.0f) soc_out = 100.0f;
+        if (soc_out < 0.0f) soc_out = 0.0f;
 
-            if (soc_previous_current_timestamp != timestamp) {  /* check if current measurement has been updated */
-                timestep = timestamp - previous_timestamp;
-                if (timestep > 0) {
-                    NVM_getSOC(&soc);
-                    /* Current in charge direction negative means SOC increasing --> BAT naming, not ROB */
-                    /* soc_mean = soc_mean - (sox_current_tab.current *mA* /(float)SOX_CELL_CAPACITY (*mAh*)) * (float)(timestep) * (10.0/3600.0); */ /*milliseconds*/
+        // Set SoC values
+        sox.soc_mean = soc_out;
+        sox.soc_min = soc_out;
+        sox.soc_max = soc_out;
 
-                    if (POSITIVE_DISCHARGE_CURRENT == TRUE) {
-                        deltaSOC = (((sox_current_tab.current)*(float)(timestep)/10))/(3600.0f * SOX_CELL_CAPACITY); /* ((mA *ms *(1s/1000ms)) / (3600(s/h) *mAh)) *100% */
-                    } else {
-                        deltaSOC = -(((sox_current_tab.current)*(float)(timestep)/10))/(3600.0f * SOX_CELL_CAPACITY); /* ((mA *ms *(1s/1000ms)) / (3600(s/h) *mAh)) *100% */
-                    }
-                    soc.mean = soc.mean - deltaSOC;
-                    soc.min = soc.min - deltaSOC;
-                    soc.max = soc.max - deltaSOC;
-                    if (soc.mean > 100.0f) { soc.mean = 100.0; }
-                    if (soc.mean < 0.0f)   { soc.mean = 0.0;   }
-                    if (soc.min > 100.0f)  { soc.min = 100.0;  }
-                    if (soc.min < 0.0f)    { soc.min = 0.0;    }
-                    if (soc.max > 100.0f)  { soc.max = 100.0;  }
-                    if (soc.max < 0.0f)    { soc.max = 0.0;    }
-
-                    sox.soc_mean = soc.mean;
-                    sox.soc_min = soc.min;
-                    sox.soc_max = soc.max;
-
-                    NVM_setSOC(&soc);
-                    sox.state++;
-                    DB_WriteBlock(&sox, DATA_BLOCK_ID_SOX);
-                }
-            } /* end check if current measurement has been updated */
-            /* update the variable for the next check */
-            soc_previous_current_timestamp = sox_current_tab.timestamp;
-
-        } else {
-            DB_ReadBlock(&sox_current_tab, DATA_BLOCK_ID_CURRENT_SENSOR);
-
-            timestamp_cc = sox_current_tab.timestamp_cc;
-            previous_timestamp_cc = sox_current_tab.previous_timestamp_cc;
-
-            if (previous_timestamp_cc != timestamp_cc) {  /* check if cc measurement has been updated */
-                DB_ReadBlock(&cans_current_tab, DATA_BLOCK_ID_CURRENT_SENSOR);
-
-                if (POSITIVE_DISCHARGE_CURRENT == TRUE) {
-                    sox.soc_mean = sox_state.cc_scaling - 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                    sox.soc_min = sox_state.cc_scaling_min - 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                    sox.soc_max = sox_state.cc_scaling_max - 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                } else {
-                    sox.soc_mean = sox_state.cc_scaling + 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                    sox.soc_min = sox_state.cc_scaling_min + 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                    sox.soc_max = sox_state.cc_scaling_max + 100.0f*cans_current_tab.current_counter/(3600.0f*(SOX_CELL_CAPACITY/1000.0f));
-                }
-
-                soc.mean = sox.soc_mean;
-                soc.min = sox.soc_min;
-                soc.max = sox.soc_max;
-                if (sox.soc_mean > 100.0f) { sox.soc_mean = 100.0; }
-                if (sox.soc_mean < 0.0f)   { sox.soc_mean = 0.0;   }
-                if (sox.soc_min > 100.0f)  { sox.soc_min = 100.0;  }
-                if (sox.soc_min < 0.0f)    { sox.soc_min = 0.0;    }
-                if (sox.soc_max > 100.0f)  { sox.soc_max = 100.0;  }
-                if (sox.soc_max < 0.0f)    { sox.soc_max = 0.0;    }
-                NVM_setSOC(&soc);
-                sox.state++;
-                DB_WriteBlock(&sox, DATA_BLOCK_ID_SOX);
-            }
-            soc_previous_current_timestamp_cc = sox_current_tab.timestamp_cc;
-        }
+        // Store to NVM
+        SOX_SOC_s soc_struct = {soc_out, soc_out, soc_out, 0, 0, 0, 0};
+        NVM_setSOC(&soc_struct);
+        DB_WriteBlock(&sox, DATA_BLOCK_ID_SOX);
     }
 }
+
+
 
 void SOF_Init(void) {
     /* Calculating SOF curve for the recommended operating current */
