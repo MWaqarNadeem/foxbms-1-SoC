@@ -53,7 +53,27 @@ typedef double              real64_T;
 
 typedef int                 boolean_T;
 
-#endif /* TMWTYPES_DEFINED */
+// Define true and false if not already defined
+#ifndef true
+#define true 1
+#endif
+
+#ifndef false
+#define false 0
+#endif
+
+// Define 32-bit integer limits
+#ifndef MAX_int32_T
+#define MAX_int32_T 2147483647
+#endif
+
+#ifndef MIN_int32_T
+#define MIN_int32_T (-2147483647 - 1)
+#endif
+
+#endif 
+
+/* TMWTYPES_DEFINED */
 
 
 #endif

@@ -61,7 +61,8 @@
 #include "batterysystem_cfg.h"
 #include "nvramhandler.h"
 
-
+#include "matlab_types_extensions.h"
+//#include "rtwtypes.h"
 /* For SoC Estimation from LSTM */
 #include "socEstimator_wrapper.h"
 
@@ -233,11 +234,12 @@ void SOC_RecalibrateViaLookupTable(void) {
 /* ==== SoC buffer for LSTM ==== */
 #define LSTM_INPUT_LEN 20  // Or whatever time window you trained the LSTM on
 
-static float voltage_buffer[LSTM_INPUT_LEN] = {0};
-static float current_buffer[LSTM_INPUT_LEN] = {0};
-static float temperature_buffer[LSTM_INPUT_LEN] = {0};
+double voltage_buffer[LSTM_INPUT_LEN] = {0};
+double current_buffer[LSTM_INPUT_LEN] = {0};
+double temperature_buffer[LSTM_INPUT_LEN] = {0};
 static int buffer_index = 0;
-static bool buffer_full = false;
+static boolean_T buffer_full = false;
+//static bool buffer_full = false;
 
 
 /* ==== SOC Estimator from LSTM ==== */
@@ -260,12 +262,12 @@ void SOC_Calculation(void) {
     }
 
     if (buffer_full) {
-        float soc_out = 0.0f;
+        double soc_out = 0.0;
         SOX_GetStateOfCharge_fromLSTM(voltage_buffer, current_buffer, temperature_buffer, LSTM_INPUT_LEN, &soc_out);
 
         // Clamp the output
-        if (soc_out > 100.0f) soc_out = 100.0f;
-        if (soc_out < 0.0f) soc_out = 0.0f;
+        if (soc_out > 100.0) soc_out = 100.0;
+        if (soc_out < 0.0) soc_out = 0.0;
 
         // Set SoC values
         sox.soc_mean = soc_out;
@@ -372,9 +374,8 @@ void SOF_Calculation(void) {
  */
 
 float SOC_GetFromVoltage(uint16_t voltage_mV) {
-    float SOC = 50.0f;
-
-    return SOC;
+    (void)voltage_mV;
+    return 0.0f;  // Or whatever dummy value, if not implemented
 }
 
 
