@@ -4,7 +4,7 @@
 #include "socEstimator_emxAPI.h"
 #include "socEstimator_emxutil.h"
 
-void SOX_GetStateOfCharge_fromLSTM(float *voltage, float *current, float *temperature, int len, float *soc_out) {
+void SOX_GetStateOfCharge_fromLSTM(double *voltage, double *current, double *temperature, int len, double *soc_out) {
     static int is_initialized = 0;
     if (!is_initialized) {
         socEstimator_initialize();
